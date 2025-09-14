@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Question, Option } from './types';
-import { GenerateIcon, BankIcon, HistoryIcon, CheckIcon, XIcon, AlertIcon, StarIcon, StarOutlineIcon, EyeSlashIcon } from './components/IconComponents';
+import { GenerateIcon, BankIcon, HistoryIcon, CheckIcon, XIcon, AlertIcon, StarIcon, StarOutlineIcon, EyeSlashIcon } from './components/IconComponents.tsx';
 
 type ActiveTab = 'generate' | 'bank' | 'history';
 
@@ -662,3 +662,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+

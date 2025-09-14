@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Question, Option } from './types';
-import { GenerateIcon, BankIcon, HistoryIcon, CheckIcon, XIcon, AlertIcon, StarIcon, StarOutlineIcon, EyeSlashIcon } from './components/IconComponents.tsx';
+import { GenerateIcon, BankIcon, HistoryIcon, CheckIcon, XIcon, AlertIcon, StarIcon, StarOutlineIcon, EyeSlashIcon } from './components/IconComponents';
 
 type ActiveTab = 'generate' | 'bank' | 'history';
 

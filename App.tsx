@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { Question, Option } from './types';
 import { GenerateIcon, BankIcon, HistoryIcon, CheckIcon, XIcon, AlertIcon, StarIcon, StarOutlineIcon, EyeSlashIcon } from './components/IconComponents';
 
@@ -678,6 +679,7 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-background text-primary-text">
+              <Analytics /> {}
             <Header activeTab={activeTab} setActiveTab={setActiveTab} />
             <main className="container mx-auto px-4 py-8">
                 {renderActiveView()}

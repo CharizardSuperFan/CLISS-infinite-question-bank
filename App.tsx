@@ -235,6 +235,7 @@ const QuestionBankView: React.FC<{
     const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
     const [showExplanation, setShowExplanation] = useState(false);
     const [isAnalysisMode, setIsAnalysisMode] = useState(false);
+    const [focusNewOnly, setFocusNewOnly] = useState(false);
     const [note, setNote] = useState('');
     const [eliminatedOptions, setEliminatedOptions] = useState<Set<string>>(new Set());
     const [time, setTime] = useState(0);
@@ -244,6 +245,16 @@ const QuestionBankView: React.FC<{
         const newQuestions = questions.filter(q => !q.hasBeenPracticed);
         const practicedQuestions = questions.filter(q => q.hasBeenPracticed);
 
+        // If the number of questions in each deck hasn't changed, it was a minor update (e.g., starring).
+        // In this case, just update the question data in the existing decks without resetting the view.
+        if (newQuestions.length === newDeck.length && practicedQuestions.length === practicedDeck.length) {
+            const updateDeck = (deck: Question[]) => deck.map(dq => questions.find(q => q.id === dq.id)!).filter(Boolean);
+            setNewDeck(updateDeck(newDeck));
+            setPracticedDeck(updateDeck(practicedDeck));
+            return; // Exit without resetting position, timer, etc.
+        }
+
+        // Otherwise, it was a major change (add/delete/practice), so reset and reshuffle.
         setNewDeck(shuffleArray(newQuestions));
         setPracticedDeck(shuffleArray(practicedQuestions));
         
@@ -281,20 +292,23 @@ const QuestionBankView: React.FC<{
 
     const handleNext = () => {
         if (!currentQuestion) return;
-
+    
         if (isPracticingNew) {
             onMarkAsPracticed(currentQuestion.id);
         }
-        
-        const isLastInDeck = deckPosition + 1 >= activeDeck.length;
-
-        if (isPracticingNew && isLastInDeck) {
+    
+        const isLastInNewDeck = isPracticingNew && deckPosition + 1 >= newDeck.length;
+    
+        // If it's the last new question, focus mode is OFF, and there are practiced questions, switch to the practiced deck.
+        if (isLastInNewDeck && !focusNewOnly && practicedDeck.length > 0) {
             setIsPracticingNew(false);
             setDeckPosition(0);
-        } else if (!isLastInDeck) {
+        } else if (deckPosition + 1 < activeDeck.length) {
+            // Otherwise, if there are more questions in the current deck, advance.
             setDeckPosition(deckPosition + 1);
         }
-        
+        // If at the end of a deck and can't switch, do nothing (button will be disabled).
+    
         setSelectedAnswer(null);
         setShowExplanation(false);
         setEliminatedOptions(new Set());
@@ -339,7 +353,11 @@ const QuestionBankView: React.FC<{
     }
     
     const hasAnswered = selectedAnswer !== null;
-    const isLastPracticedQuestion = !isPracticingNew && deckPosition >= practicedDeck.length - 1;
+    const isLastInNewDeck = isPracticingNew && deckPosition >= newDeck.length - 1;
+    const isLastInPracticedDeck = !isPracticingNew && deckPosition >= practicedDeck.length - 1;
+
+    const disableNextButton = isLastInPracticedDeck || (isLastInNewDeck && (focusNewOnly || practicedDeck.length === 0));
+
 
     const handleOptionClick = (optionText: string) => {
         if (hasAnswered) return;
@@ -366,7 +384,7 @@ const QuestionBankView: React.FC<{
 
     return (
         <div className="w-full max-w-4xl mx-auto flex flex-col gap-6">
-            <div className="flex justify-between items-center p-2 bg-surface rounded-lg">
+            <div className="flex justify-between items-center p-2 bg-surface rounded-lg flex-wrap gap-y-3">
                 <div className="flex items-center gap-3">
                     <p className="text-sm font-semibold text-brand-primary">
                         {isPracticingNew ? `New Question ${deckPosition + 1} of ${newDeck.length}` : `Review Question ${deckPosition + 1} of ${practicedDeck.length}`}
@@ -384,20 +402,34 @@ const QuestionBankView: React.FC<{
                          </button>
                     )}
                 </div>
-                 <div className="font-mono text-xl text-primary-text tracking-wider">
+                 <div className="font-mono text-xl text-primary-text tracking-wider order-first sm:order-none w-full sm:w-auto text-center">
                     {formatTime(time)}
                 </div>
-                <div className="flex items-center gap-2">
-                     <label htmlFor="analysis-mode" className="text-sm font-medium text-secondary-text cursor-pointer">Mistake Analysis Mode</label>
-                    <button
-                        id="analysis-mode"
-                        role="switch"
-                        aria-checked={isAnalysisMode}
-                        onClick={() => setIsAnalysisMode(!isAnalysisMode)}
-                        className={`${isAnalysisMode ? 'bg-brand-primary' : 'bg-slate-600'} relative inline-flex h-6 w-11 items-center rounded-full transition-colors`}
-                    >
-                        <span className={`${isAnalysisMode ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
-                    </button>
+                <div className="flex items-center gap-4">
+                     <div className="flex items-center gap-2">
+                        <label htmlFor="focus-mode" className="text-sm font-medium text-secondary-text cursor-pointer whitespace-nowrap">New Only</label>
+                        <button
+                            id="focus-mode"
+                            role="switch"
+                            aria-checked={focusNewOnly}
+                            onClick={() => setFocusNewOnly(!focusNewOnly)}
+                            className={`${focusNewOnly ? 'bg-brand-primary' : 'bg-slate-600'} relative inline-flex h-6 w-11 items-center rounded-full transition-colors`}
+                        >
+                            <span className={`${focusNewOnly ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
+                        </button>
+                    </div>
+                     <div className="flex items-center gap-2">
+                        <label htmlFor="analysis-mode" className="text-sm font-medium text-secondary-text cursor-pointer whitespace-nowrap">Analysis Mode</label>
+                        <button
+                            id="analysis-mode"
+                            role="switch"
+                            aria-checked={isAnalysisMode}
+                            onClick={() => setIsAnalysisMode(!isAnalysisMode)}
+                            className={`${isAnalysisMode ? 'bg-brand-primary' : 'bg-slate-600'} relative inline-flex h-6 w-11 items-center rounded-full transition-colors`}
+                        >
+                            <span className={`${isAnalysisMode ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -464,7 +496,7 @@ const QuestionBankView: React.FC<{
             )}
             <button 
                 onClick={handleNext} 
-                disabled={isLastPracticedQuestion}
+                disabled={disableNextButton}
                 className="w-full sm:w-auto mx-auto mt-4 px-8 py-3 bg-brand-primary text-white font-semibold rounded-lg shadow-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-background disabled:bg-slate-600 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
             >
                 Next Question
@@ -662,4 +694,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-

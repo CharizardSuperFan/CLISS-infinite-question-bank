@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Question, Option } from './types';
 import { GenerateIcon, BankIcon, HistoryIcon, CheckIcon, XIcon, AlertIcon, StarIcon, StarOutlineIcon, EyeSlashIcon } from './components/IconComponents';
@@ -241,11 +239,7 @@ const QuestionBankView: React.FC<{
     const [eliminatedOptions, setEliminatedOptions] = useState<Set<string>>(new Set());
     const [time, setTime] = useState(0);
     const [isTimerRunning, setIsTimerRunning] = useState(true);
-
-    // Decks are derived from props but stored in state to track changes
-    const [newDeck, setNewDeck] = useState<Question[]>([]);
-    const [practicedDeck, setPracticedDeck] = useState<Question[]>([]);
-
+    
     // This ref holds the stable shuffled order of all question IDs for the session
     const shuffledAllIds = useRef<string[]>([]);
     const prevQuestionCount = useRef(questions.length);
@@ -258,31 +252,26 @@ const QuestionBankView: React.FC<{
         setIsTimerRunning(true);
     };
     
+    // This useEffect handles shuffling on major changes (add/delete questions) or initial load.
     useEffect(() => {
-        // A "major" change is defined as adding/deleting questions.
-        // This is when we reshuffle everything and reset progress.
-        if (questions.length !== prevQuestionCount.current) {
+        if (questions.length !== prevQuestionCount.current || shuffledAllIds.current.length === 0) {
             shuffledAllIds.current = shuffleArray(questions.map(q => q.id));
             prevQuestionCount.current = questions.length;
             setDeckPosition(0);
             resetCardState();
-            // After a major change, always start with new questions if they exist
             setIsPracticingNew(questions.some(q => !q.hasBeenPracticed));
         }
-
-        // This part runs on every `questions` update (major or minor like starring/practicing).
-        // It keeps the decks synchronized with the single source of truth (`questions` prop),
-        // while respecting the stable shuffled order.
-        const getOrderedDeck = (deck: Question[]) => {
-            // Sort a given deck based on the master shuffled list of IDs
-            return [...deck].sort((a, b) => shuffledAllIds.current.indexOf(a.id) - shuffledAllIds.current.indexOf(b.id));
-        };
-        const allNew = questions.filter(q => !q.hasBeenPracticed);
-        const allPracticed = questions.filter(q => q.hasBeenPracticed);
-
-        setNewDeck(getOrderedDeck(allNew));
-        setPracticedDeck(getOrderedDeck(allPracticed));
     }, [questions]);
+
+    // DERIVE decks on every render from the single source of truth (`questions` prop).
+    // This eliminates stale state bugs.
+    const questionMap = new Map(questions.map(q => [q.id, q]));
+    const sortedQuestions = shuffledAllIds.current
+        .map(id => questionMap.get(id))
+        .filter((q): q is Question => !!q);
+    
+    const newDeck = sortedQuestions.filter(q => !q.hasBeenPracticed);
+    const practicedDeck = sortedQuestions.filter(q => q.hasBeenPracticed);
 
     useEffect(() => {
         let interval: number | null = null;
@@ -302,37 +291,31 @@ const QuestionBankView: React.FC<{
         return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
     };
 
-    const activeDeck = isPracticingNew ? newDeck : practicedDeck;
+    const activeDeck = focusNewOnly ? newDeck : (isPracticingNew ? newDeck : practicedDeck);
     const currentQuestion = activeDeck[deckPosition];
 
     const handleNext = () => {
         if (!currentQuestion) return;
     
         const wasPracticingNew = isPracticingNew;
-        const currentDeckSize = activeDeck.length;
-
-        // The key action that causes a state change
-        if (wasPracticingNew) {
-            onMarkAsPracticed(currentQuestion.id);
-        }
-
         resetCardState();
-
+    
         if (wasPracticingNew) {
-            // The `newDeck` is about to shrink by 1.
-            // If we are at the end of it, we need to switch decks.
-            if (deckPosition >= currentDeckSize - 1) {
-                if (!focusNewOnly && practicedDeck.length > 0) {
-                    setIsPracticingNew(false);
-                    setDeckPosition(0);
-                }
-                // else, stay at end. The 'Next' button will be disabled.
+            const isLastNewQuestion = deckPosition >= newDeck.length - 1;
+            
+            // This is the action that triggers re-render and deck changes.
+            onMarkAsPracticed(currentQuestion.id);
+    
+            if (isLastNewQuestion && !focusNewOnly) {
+                // After this last new question is done, switch to practiced deck.
+                setIsPracticingNew(false);
+                setDeckPosition(0);
             }
-            // If not at the end, `deckPosition` stays the same, and we see the next item
-            // because the deck shrinks around the current position index.
+            // If it's not the last question, or we're in focus mode, we don't change position. 
+            // The deck will shrink on re-render, effectively advancing to the next question.
         } else {
-            // We are on the practiced deck, so we just increment position.
-            if (deckPosition < currentDeckSize - 1) {
+            // We are on the practiced deck, so just increment position.
+            if (deckPosition < practicedDeck.length - 1) {
                 setDeckPosition(deckPosition + 1);
             }
         }
@@ -345,7 +328,7 @@ const QuestionBankView: React.FC<{
         resetCardState();
 
         if (newFocusState) {
-            // Focus mode is always for new questions
+            // "New Only" mode is always for new questions
             setIsPracticingNew(true);
         } else {
             // When turning off, start with new questions if they exist
@@ -353,16 +336,12 @@ const QuestionBankView: React.FC<{
         }
     };
 
-
     const handleReshuffle = () => {
         // Reshuffle the entire question bank order and reset progress
         shuffledAllIds.current = shuffleArray(questions.map(q => q.id));
         setDeckPosition(0);
         resetCardState();
         setIsPracticingNew(newDeck.length > 0);
-        // Force a deck update with the new order
-        setNewDeck([...newDeck]);
-        setPracticedDeck([...practicedDeck]);
     };
 
     useEffect(() => {
@@ -390,13 +369,25 @@ const QuestionBankView: React.FC<{
              </div>
         )
     }
+
+    const getProgressText = () => {
+        if (focusNewOnly) {
+            const count = newDeck.length;
+            return `${count} new question${count !== 1 ? 's' : ''} left`;
+        }
+        if (isPracticingNew) {
+            if (newDeck.length === 0) return "No new questions";
+            return `New Question ${Math.min(deckPosition + 1, newDeck.length)} of ${newDeck.length}`;
+        }
+        if (practicedDeck.length === 0) return "No practiced questions";
+        return `Review Question ${Math.min(deckPosition + 1, practicedDeck.length)} of ${practicedDeck.length}`;
+    };
     
     const hasAnswered = selectedAnswer !== null;
     const isAtEndOfNewDeck = isPracticingNew && deckPosition >= newDeck.length - 1;
     const isAtEndOfPracticedDeck = !isPracticingNew && deckPosition >= practicedDeck.length - 1;
 
     const disableNextButton = isAtEndOfPracticedDeck || (isAtEndOfNewDeck && (focusNewOnly || practicedDeck.length === 0));
-
 
     const handleOptionClick = (optionText: string) => {
         if (hasAnswered) return;
@@ -426,9 +417,7 @@ const QuestionBankView: React.FC<{
             <div className="flex justify-between items-center p-2 bg-surface rounded-lg flex-wrap gap-y-3">
                 <div className="flex items-center gap-3">
                     <p className="text-sm font-semibold text-brand-primary">
-                        {isPracticingNew 
-                            ? `${Math.max(0, newDeck.length - deckPosition)} New Question(s) Left` 
-                            : `Review Question ${deckPosition + 1} of ${practicedDeck.length}`}
+                       {getProgressText()}
                     </p>
                      <button 
                         onClick={() => onToggleMark(currentQuestion.id)} 

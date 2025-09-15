@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react'; 
+
+
+import React, { useState, useEffect, useRef } from 'react';
 import { Question, Option } from './types';
 import { GenerateIcon, BankIcon, HistoryIcon, CheckIcon, XIcon, AlertIcon, StarIcon, StarOutlineIcon, EyeSlashIcon } from './components/IconComponents';
 
@@ -227,54 +229,59 @@ const QuestionBankView: React.FC<{
     onToggleMark: (questionId: string) => void,
     onMarkAsPracticed: (questionId: string) => void,
 }> = ({ questions, onUpdateNote, onToggleMark, onMarkAsPracticed }) => {
-    const [newDeck, setNewDeck] = useState<Question[]>([]);
-    const [practicedDeck, setPracticedDeck] = useState<Question[]>([]);
     const [deckPosition, setDeckPosition] = useState(0);
     const [isPracticingNew, setIsPracticingNew] = useState(true);
+    const [focusNewOnly, setFocusNewOnly] = useState(false);
     
+    // States for the current question card
     const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
     const [showExplanation, setShowExplanation] = useState(false);
     const [isAnalysisMode, setIsAnalysisMode] = useState(false);
-    const [focusNewOnly, setFocusNewOnly] = useState(false);
     const [note, setNote] = useState('');
     const [eliminatedOptions, setEliminatedOptions] = useState<Set<string>>(new Set());
     const [time, setTime] = useState(0);
     const [isTimerRunning, setIsTimerRunning] = useState(true);
-    const isInitialMount = useRef(true);
 
+    // Decks are derived from props but stored in state to track changes
+    const [newDeck, setNewDeck] = useState<Question[]>([]);
+    const [practicedDeck, setPracticedDeck] = useState<Question[]>([]);
 
-    useEffect(() => {
-        const newQuestions = questions.filter(q => !q.hasBeenPracticed);
-        const practicedQuestions = questions.filter(q => q.hasBeenPracticed);
+    // This ref holds the stable shuffled order of all question IDs for the session
+    const shuffledAllIds = useRef<string[]>([]);
+    const prevQuestionCount = useRef(questions.length);
 
-        // This condition handles "minor" changes like starring a question or saving a note.
-        // It updates the question data in the existing decks without resetting the view,
-        // preserving the user's progress and the shuffled order of the current session.
-        if (!isInitialMount.current && newQuestions.length + practicedQuestions.length === questions.length) {
-            const updateDeck = (deck: Question[]) => deck.map(dq => questions.find(q => q.id === dq.id)!).filter(Boolean);
-            setNewDeck(updateDeck(newDeck));
-            setPracticedDeck(updateDeck(practicedDeck));
-            return;
-        }
-
-        // This block runs on the initial mount or when questions are added/deleted ("major" change).
-        // It resets the decks and the user's position to start a fresh session.
-        setNewDeck(shuffleArray(newQuestions));
-        setPracticedDeck(shuffleArray(practicedQuestions));
-        
-        setDeckPosition(0);
-        setIsPracticingNew(newQuestions.length > 0);
-
-        // Reset other states for a clean start
+    const resetCardState = () => {
         setSelectedAnswer(null);
         setShowExplanation(false);
         setEliminatedOptions(new Set());
         setTime(0);
         setIsTimerRunning(true);
-
-        if (isInitialMount.current) {
-            isInitialMount.current = false;
+    };
+    
+    useEffect(() => {
+        // A "major" change is defined as adding/deleting questions.
+        // This is when we reshuffle everything and reset progress.
+        if (questions.length !== prevQuestionCount.current) {
+            shuffledAllIds.current = shuffleArray(questions.map(q => q.id));
+            prevQuestionCount.current = questions.length;
+            setDeckPosition(0);
+            resetCardState();
+            // After a major change, always start with new questions if they exist
+            setIsPracticingNew(questions.some(q => !q.hasBeenPracticed));
         }
+
+        // This part runs on every `questions` update (major or minor like starring/practicing).
+        // It keeps the decks synchronized with the single source of truth (`questions` prop),
+        // while respecting the stable shuffled order.
+        const getOrderedDeck = (deck: Question[]) => {
+            // Sort a given deck based on the master shuffled list of IDs
+            return [...deck].sort((a, b) => shuffledAllIds.current.indexOf(a.id) - shuffledAllIds.current.indexOf(b.id));
+        };
+        const allNew = questions.filter(q => !q.hasBeenPracticed);
+        const allPracticed = questions.filter(q => q.hasBeenPracticed);
+
+        setNewDeck(getOrderedDeck(allNew));
+        setPracticedDeck(getOrderedDeck(allPracticed));
     }, [questions]);
 
     useEffect(() => {
@@ -301,45 +308,61 @@ const QuestionBankView: React.FC<{
     const handleNext = () => {
         if (!currentQuestion) return;
     
-        if (isPracticingNew) {
+        const wasPracticingNew = isPracticingNew;
+        const currentDeckSize = activeDeck.length;
+
+        // The key action that causes a state change
+        if (wasPracticingNew) {
             onMarkAsPracticed(currentQuestion.id);
         }
-    
-        const isLastInNewDeck = isPracticingNew && deckPosition + 1 >= newDeck.length;
-    
-        // If it's the last new question, focus mode is OFF, and there are practiced questions, switch to the practiced deck.
-        if (isLastInNewDeck && !focusNewOnly && practicedDeck.length > 0) {
-            setIsPracticingNew(false);
-            setDeckPosition(0);
-        } else if (deckPosition + 1 < activeDeck.length) {
-            // Otherwise, if there are more questions in the current deck, advance.
-            setDeckPosition(deckPosition + 1);
+
+        resetCardState();
+
+        if (wasPracticingNew) {
+            // The `newDeck` is about to shrink by 1.
+            // If we are at the end of it, we need to switch decks.
+            if (deckPosition >= currentDeckSize - 1) {
+                if (!focusNewOnly && practicedDeck.length > 0) {
+                    setIsPracticingNew(false);
+                    setDeckPosition(0);
+                }
+                // else, stay at end. The 'Next' button will be disabled.
+            }
+            // If not at the end, `deckPosition` stays the same, and we see the next item
+            // because the deck shrinks around the current position index.
+        } else {
+            // We are on the practiced deck, so we just increment position.
+            if (deckPosition < currentDeckSize - 1) {
+                setDeckPosition(deckPosition + 1);
+            }
         }
-        // If at the end of a deck and can't switch, do nothing (button will be disabled).
+    };
     
-        setSelectedAnswer(null);
-        setShowExplanation(false);
-        setEliminatedOptions(new Set());
-        setTime(0);
-        setIsTimerRunning(true);
+    const handleToggleFocusMode = () => {
+        const newFocusState = !focusNewOnly;
+        setFocusNewOnly(newFocusState);
+        setDeckPosition(0);
+        resetCardState();
+
+        if (newFocusState) {
+            // Focus mode is always for new questions
+            setIsPracticingNew(true);
+        } else {
+            // When turning off, start with new questions if they exist
+            setIsPracticingNew(newDeck.length > 0);
+        }
     };
 
+
     const handleReshuffle = () => {
-        const deckToShuffle = isPracticingNew ? newDeck : practicedDeck;
-        const shuffled = shuffleArray(deckToShuffle);
-
-        if (isPracticingNew) {
-            setNewDeck(shuffled);
-        } else {
-            setPracticedDeck(shuffled);
-        }
-
+        // Reshuffle the entire question bank order and reset progress
+        shuffledAllIds.current = shuffleArray(questions.map(q => q.id));
         setDeckPosition(0);
-        setSelectedAnswer(null);
-        setShowExplanation(false);
-        setEliminatedOptions(new Set());
-        setTime(0);
-        setIsTimerRunning(true);
+        resetCardState();
+        setIsPracticingNew(newDeck.length > 0);
+        // Force a deck update with the new order
+        setNewDeck([...newDeck]);
+        setPracticedDeck([...practicedDeck]);
     };
 
     useEffect(() => {
@@ -363,16 +386,16 @@ const QuestionBankView: React.FC<{
     if (!currentQuestion) {
         return (
              <div className="text-center text-secondary-text p-8 bg-surface rounded-lg">
-                <p>No questions available in this section.</p>
+                <p>You've completed all available questions in this section!</p>
              </div>
         )
     }
     
     const hasAnswered = selectedAnswer !== null;
-    const isLastInNewDeck = isPracticingNew && deckPosition >= newDeck.length - 1;
-    const isLastInPracticedDeck = !isPracticingNew && deckPosition >= practicedDeck.length - 1;
+    const isAtEndOfNewDeck = isPracticingNew && deckPosition >= newDeck.length - 1;
+    const isAtEndOfPracticedDeck = !isPracticingNew && deckPosition >= practicedDeck.length - 1;
 
-    const disableNextButton = isLastInPracticedDeck || (isLastInNewDeck && (focusNewOnly || practicedDeck.length === 0));
+    const disableNextButton = isAtEndOfPracticedDeck || (isAtEndOfNewDeck && (focusNewOnly || practicedDeck.length === 0));
 
 
     const handleOptionClick = (optionText: string) => {
@@ -403,7 +426,9 @@ const QuestionBankView: React.FC<{
             <div className="flex justify-between items-center p-2 bg-surface rounded-lg flex-wrap gap-y-3">
                 <div className="flex items-center gap-3">
                     <p className="text-sm font-semibold text-brand-primary">
-                        {isPracticingNew ? `New Question ${deckPosition + 1} of ${newDeck.length}` : `Review Question ${deckPosition + 1} of ${practicedDeck.length}`}
+                        {isPracticingNew 
+                            ? `${Math.max(0, newDeck.length - deckPosition)} New Question(s) Left` 
+                            : `Review Question ${deckPosition + 1} of ${practicedDeck.length}`}
                     </p>
                      <button 
                         onClick={() => onToggleMark(currentQuestion.id)} 
@@ -428,7 +453,7 @@ const QuestionBankView: React.FC<{
                             id="focus-mode"
                             role="switch"
                             aria-checked={focusNewOnly}
-                            onClick={() => setFocusNewOnly(!focusNewOnly)}
+                            onClick={handleToggleFocusMode}
                             className={`${focusNewOnly ? 'bg-brand-primary' : 'bg-slate-600'} relative inline-flex h-6 w-11 items-center rounded-full transition-colors`}
                         >
                             <span className={`${focusNewOnly ? 'translate-x-6' : 'translate-x-1'} inline-block h-4 w-4 transform rounded-full bg-white transition-transform`} />
@@ -512,7 +537,7 @@ const QuestionBankView: React.FC<{
             )}
             <button 
                 onClick={handleNext} 
-                disabled={disableNextButton}
+                disabled={!hasAnswered || disableNextButton}
                 className="w-full sm:w-auto mx-auto mt-4 px-8 py-3 bg-brand-primary text-white font-semibold rounded-lg shadow-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-background disabled:bg-slate-600 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
             >
                 Next Question

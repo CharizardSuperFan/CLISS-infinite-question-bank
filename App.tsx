@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { Analytics } from '@vercel/analytics/react';
+import React, { useState, useEffect, useRef } from 'react'; 
 import { Question, Option } from './types';
 import { GenerateIcon, BankIcon, HistoryIcon, CheckIcon, XIcon, AlertIcon, StarIcon, StarOutlineIcon, EyeSlashIcon } from './components/IconComponents';
 
@@ -241,21 +240,25 @@ const QuestionBankView: React.FC<{
     const [eliminatedOptions, setEliminatedOptions] = useState<Set<string>>(new Set());
     const [time, setTime] = useState(0);
     const [isTimerRunning, setIsTimerRunning] = useState(true);
+    const isInitialMount = useRef(true);
+
 
     useEffect(() => {
         const newQuestions = questions.filter(q => !q.hasBeenPracticed);
         const practicedQuestions = questions.filter(q => q.hasBeenPracticed);
 
-        // If the number of questions in each deck hasn't changed, it was a minor update (e.g., starring).
-        // In this case, just update the question data in the existing decks without resetting the view.
-        if (newQuestions.length === newDeck.length && practicedQuestions.length === practicedDeck.length) {
+        // This condition handles "minor" changes like starring a question or saving a note.
+        // It updates the question data in the existing decks without resetting the view,
+        // preserving the user's progress and the shuffled order of the current session.
+        if (!isInitialMount.current && newQuestions.length + practicedQuestions.length === questions.length) {
             const updateDeck = (deck: Question[]) => deck.map(dq => questions.find(q => q.id === dq.id)!).filter(Boolean);
             setNewDeck(updateDeck(newDeck));
             setPracticedDeck(updateDeck(practicedDeck));
-            return; // Exit without resetting position, timer, etc.
+            return;
         }
 
-        // Otherwise, it was a major change (add/delete/practice), so reset and reshuffle.
+        // This block runs on the initial mount or when questions are added/deleted ("major" change).
+        // It resets the decks and the user's position to start a fresh session.
         setNewDeck(shuffleArray(newQuestions));
         setPracticedDeck(shuffleArray(practicedQuestions));
         
@@ -268,6 +271,10 @@ const QuestionBankView: React.FC<{
         setEliminatedOptions(new Set());
         setTime(0);
         setIsTimerRunning(true);
+
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+        }
     }, [questions]);
 
     useEffect(() => {
@@ -318,7 +325,15 @@ const QuestionBankView: React.FC<{
     };
 
     const handleReshuffle = () => {
-        setPracticedDeck(shuffleArray(practicedDeck));
+        const deckToShuffle = isPracticingNew ? newDeck : practicedDeck;
+        const shuffled = shuffleArray(deckToShuffle);
+
+        if (isPracticingNew) {
+            setNewDeck(shuffled);
+        } else {
+            setPracticedDeck(shuffled);
+        }
+
         setDeckPosition(0);
         setSelectedAnswer(null);
         setShowExplanation(false);
@@ -397,7 +412,7 @@ const QuestionBankView: React.FC<{
                     >
                         {currentQuestion.isMarked ? <StarIcon className="w-6 h-6" /> : <StarOutlineIcon className="w-6 h-6" />}
                     </button>
-                    {!isPracticingNew && practicedDeck.length > 1 && (
+                    {activeDeck.length > 1 && (
                          <button onClick={handleReshuffle} className="text-xs font-semibold text-secondary-text hover:text-primary-text bg-slate-700 px-2 py-1 rounded">
                              RESHUFFLE
                          </button>
@@ -679,7 +694,6 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-background text-primary-text">
-              <Analytics /> 
             <Header activeTab={activeTab} setActiveTab={setActiveTab} />
             <main className="container mx-auto px-4 py-8">
                 {renderActiveView()}

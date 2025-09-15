@@ -135,9 +135,12 @@ const parseGeneratedText = (text: string): { newQuestions: Question[], error: st
 
 // --- UI Components ---
 
-const Header: React.FC<{ activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void }> = ({ activeTab, setActiveTab }) => {
+const Header: React.FC<{ activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void; visitCount: number }> = ({ activeTab, setActiveTab, visitCount }) => {
     return (
         <header className="relative py-6 text-center border-b border-surface">
+             <div className="absolute top-6 left-6 text-secondary-text font-mono text-sm hidden sm:block">
+                Total Visits: {visitCount}
+            </div>
             <h1 className="text-4xl font-bold tracking-tight text-primary-text">
                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-teal-400">CLISS</span> Infinite Question Bank
             </h1>
@@ -290,20 +293,13 @@ const QuestionBankView: React.FC<{
 
     const activeDeck = focusNewOnly ? newDeck : normalModeDeck;
     const currentQuestion = activeDeck[deckPosition];
-
+    
     const handleNext = () => {
         if (!currentQuestion) return;
-
-        // Always mark as practiced if it was a new question. This is essential for New Only mode.
-        if (!currentQuestion.hasBeenPracticed) {
-            onMarkAsPracticed(currentQuestion.id);
-        }
-
         resetCardState();
-    
         if (focusNewOnly) {
-            // In "New Only" mode, the deck shrinks. Position stays the same to show the next item.
-            // When the last new question is answered, the component will show the completion message.
+            // In "New Only" mode, the deck shrinks automatically because the answered question is filtered out.
+            // We just need to stay at the same deckPosition to see the next item.
         } else {
             // In "Normal Mode", we have a fixed-size deck, so we just increment position.
             if (deckPosition < activeDeck.length - 1) {
@@ -343,15 +339,11 @@ const QuestionBankView: React.FC<{
         );
     }
     
-    if (!currentQuestion) {
-        return (
-             <div className="text-center text-secondary-text p-8 bg-surface rounded-lg">
-                <p>You've completed all available questions in this section!</p>
-             </div>
-        )
-    }
-
     const getProgressText = () => {
+        if (!currentQuestion) {
+            if (focusNewOnly) return "0 new questions left";
+            return "Review Complete";
+        }
         if (focusNewOnly) {
             const count = newDeck.length;
             return `${count} new question${count !== 1 ? 's' : ''} left`;
@@ -362,12 +354,16 @@ const QuestionBankView: React.FC<{
     };
     
     const hasAnswered = selectedAnswer !== null;
-    const isAtEndOfDeck = deckPosition >= activeDeck.length - 1;
+    const isAtEndOfDeck = focusNewOnly ? false : deckPosition >= activeDeck.length - 1;
 
     const handleOptionClick = (optionText: string) => {
         if (hasAnswered) return;
         setSelectedAnswer(optionText);
         setIsTimerRunning(false);
+        // Mark as practiced immediately upon answering a new question
+        if (currentQuestion && !currentQuestion.hasBeenPracticed) {
+            onMarkAsPracticed(currentQuestion.id);
+        }
     };
 
     const handleEliminateClick = (optionText: string) => {
@@ -384,7 +380,9 @@ const QuestionBankView: React.FC<{
     };
     
     const handleSaveNote = () => {
-        onUpdateNote(currentQuestion.id, note);
+        if (currentQuestion) {
+            onUpdateNote(currentQuestion.id, note);
+        }
     };
 
     return (
@@ -394,13 +392,15 @@ const QuestionBankView: React.FC<{
                     <p className="text-sm font-semibold text-brand-primary">
                        {getProgressText()}
                     </p>
-                     <button 
-                        onClick={() => onToggleMark(currentQuestion.id)} 
-                        className="text-amber-400 hover:text-amber-300 transition-colors"
-                        aria-label={currentQuestion.isMarked ? "Unmark question" : "Mark question"}
-                    >
-                        {currentQuestion.isMarked ? <StarIcon className="w-6 h-6" /> : <StarOutlineIcon className="w-6 h-6" />}
-                    </button>
+                    {currentQuestion && (
+                         <button 
+                            onClick={() => onToggleMark(currentQuestion.id)} 
+                            className="text-amber-400 hover:text-amber-300 transition-colors"
+                            aria-label={currentQuestion.isMarked ? "Unmark question" : "Mark question"}
+                        >
+                            {currentQuestion.isMarked ? <StarIcon className="w-6 h-6" /> : <StarOutlineIcon className="w-6 h-6" />}
+                        </button>
+                    )}
                     {activeDeck.length > 1 && (
                          <button onClick={handleReshuffle} className="text-xs font-semibold text-secondary-text hover:text-primary-text bg-slate-700 px-2 py-1 rounded">
                              RESHUFFLE
@@ -437,75 +437,83 @@ const QuestionBankView: React.FC<{
                     </div>
                 </div>
             </div>
-
-            <div className="p-6 bg-surface rounded-lg shadow-md">
-                <p className="text-lg text-primary-text whitespace-pre-wrap">{currentQuestion.questionText}</p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {currentQuestion.options.map((option, index) => {
-                    const isSelected = selectedAnswer === option.text;
-                    const isEliminated = eliminatedOptions.has(option.text);
-                    let containerClass = "bg-surface hover:bg-slate-700";
-
-                    if (hasAnswered) {
-                        if (option.isCorrect) containerClass = "bg-emerald-800/80 border-emerald-600";
-                        else if (isSelected) containerClass = "bg-red-800/80 border-red-600";
-                        else containerClass = "bg-surface opacity-60";
-                    }
-                    return (
-                        <div key={index} className={`flex items-stretch rounded-lg overflow-hidden transition-all duration-200 border border-transparent ${containerClass}`}>
-                            <button 
-                                onClick={() => handleOptionClick(option.text)} 
-                                disabled={hasAnswered} 
-                                className="flex-grow p-4 text-left w-full disabled:cursor-not-allowed"
-                            >
-                                <span className="font-mono mr-3 text-brand-primary">{String.fromCharCode(65 + index)}.</span>
-                                <span className={`text-primary-text transition-all ${isEliminated ? 'line-through opacity-50' : ''}`}>{option.text}</span>
-                                {hasAnswered && (
-                                    <span className="ml-4 inline-block">
-                                        {option.isCorrect && <CheckIcon className="w-6 h-6 text-emerald-400" />}
-                                        {isSelected && !option.isCorrect && <XIcon className="w-6 h-6 text-red-400" />}
-                                    </span>
-                                )}
-                            </button>
-                            <button
-                                onClick={() => handleEliminateClick(option.text)}
-                                disabled={hasAnswered}
-                                className="px-4 text-secondary-text hover:text-primary-text disabled:opacity-50 disabled:cursor-not-allowed border-l border-slate-600/50"
-                                aria-label={`Eliminate option ${option.text}`}
-                            >
-                                <EyeSlashIcon className="w-5 h-5" />
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-            {hasAnswered && (
-                <div className="flex flex-col gap-4 items-center">
-                    <button onClick={() => setShowExplanation(!showExplanation)} className="font-semibold text-brand-primary hover:text-indigo-400">
-                        {showExplanation ? 'Hide' : 'Show'} Explanation
-                    </button>
-                    {showExplanation && (
-                        <div className="w-full p-4 bg-slate-900/50 rounded-lg border border-slate-700">
-                             <p className="text-secondary-text whitespace-pre-wrap">{currentQuestion.explanation}</p>
-                        </div>
-                    )}
-                    {isAnalysisMode && (
-                        <div className="w-full flex flex-col gap-2">
-                             <h4 className="font-semibold text-primary-text">My Mistake Analysis:</h4>
-                             <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="What was my mistake? How can I avoid it next time?" className="w-full p-3 bg-surface border border-slate-600 rounded-lg focus:ring-2 focus:ring-brand-primary" rows={4} />
-                             <button onClick={handleSaveNote} className="px-4 py-2 bg-brand-secondary text-white font-semibold rounded-lg self-end hover:bg-emerald-400">Save Note</button>
-                        </div>
-                    )}
+            
+            {!currentQuestion ? (
+                 <div className="text-center text-secondary-text p-8 bg-surface rounded-lg">
+                    <p>You've completed all available questions in this section!</p>
+                 </div>
+            ) : (
+            <>
+                <div className="p-6 bg-surface rounded-lg shadow-md">
+                    <p className="text-lg text-primary-text whitespace-pre-wrap">{currentQuestion.questionText}</p>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {currentQuestion.options.map((option, index) => {
+                        const isSelected = selectedAnswer === option.text;
+                        const isEliminated = eliminatedOptions.has(option.text);
+                        let containerClass = "bg-surface hover:bg-slate-700";
+
+                        if (hasAnswered) {
+                            if (option.isCorrect) containerClass = "bg-emerald-800/80 border-emerald-600";
+                            else if (isSelected) containerClass = "bg-red-800/80 border-red-600";
+                            else containerClass = "bg-surface opacity-60";
+                        }
+                        return (
+                            <div key={index} className={`flex items-stretch rounded-lg overflow-hidden transition-all duration-200 border border-transparent ${containerClass}`}>
+                                <button 
+                                    onClick={() => handleOptionClick(option.text)} 
+                                    disabled={hasAnswered} 
+                                    className="flex-grow p-4 text-left w-full disabled:cursor-not-allowed"
+                                >
+                                    <span className="font-mono mr-3 text-brand-primary">{String.fromCharCode(65 + index)}.</span>
+                                    <span className={`text-primary-text transition-all ${isEliminated ? 'line-through opacity-50' : ''}`}>{option.text}</span>
+                                    {hasAnswered && (
+                                        <span className="ml-4 inline-block">
+                                            {option.isCorrect && <CheckIcon className="w-6 h-6 text-emerald-400" />}
+                                            {isSelected && !option.isCorrect && <XIcon className="w-6 h-6 text-red-400" />}
+                                        </span>
+                                    )}
+                                </button>
+                                <button
+                                    onClick={() => handleEliminateClick(option.text)}
+                                    disabled={hasAnswered}
+                                    className="px-4 text-secondary-text hover:text-primary-text disabled:opacity-50 disabled:cursor-not-allowed border-l border-slate-600/50"
+                                    aria-label={`Eliminate option ${option.text}`}
+                                >
+                                    <EyeSlashIcon className="w-5 h-5" />
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+                {hasAnswered && (
+                    <div className="flex flex-col gap-4 items-center">
+                        <button onClick={() => setShowExplanation(!showExplanation)} className="font-semibold text-brand-primary hover:text-indigo-400">
+                            {showExplanation ? 'Hide' : 'Show'} Explanation
+                        </button>
+                        {showExplanation && (
+                            <div className="w-full p-4 bg-slate-900/50 rounded-lg border border-slate-700">
+                                <p className="text-secondary-text whitespace-pre-wrap">{currentQuestion.explanation}</p>
+                            </div>
+                        )}
+                        {isAnalysisMode && (
+                            <div className="w-full flex flex-col gap-2">
+                                <h4 className="font-semibold text-primary-text">My Mistake Analysis:</h4>
+                                <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="What was my mistake? How can I avoid it next time?" className="w-full p-3 bg-surface border border-slate-600 rounded-lg focus:ring-2 focus:ring-brand-primary" rows={4} />
+                                <button onClick={handleSaveNote} className="px-4 py-2 bg-brand-secondary text-white font-semibold rounded-lg self-end hover:bg-emerald-400">Save Note</button>
+                            </div>
+                        )}
+                    </div>
+                )}
+                <button 
+                    onClick={handleNext} 
+                    disabled={!hasAnswered || (isAtEndOfDeck && !focusNewOnly)}
+                    className="w-full sm:w-auto mx-auto mt-4 px-8 py-3 bg-brand-primary text-white font-semibold rounded-lg shadow-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-background disabled:bg-slate-600 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
+                >
+                    { focusNewOnly ? "Next New Question" : "Next Question" }
+                </button>
+            </>
             )}
-            <button 
-                onClick={handleNext} 
-                disabled={!hasAnswered || isAtEndOfDeck}
-                className="w-full sm:w-auto mx-auto mt-4 px-8 py-3 bg-brand-primary text-white font-semibold rounded-lg shadow-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-background disabled:bg-slate-600 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
-            >
-                Next Question
-            </button>
         </div>
     );
 };
@@ -621,6 +629,19 @@ const App: React.FC = () => {
     const [activeTab, setActiveTab] = useState<ActiveTab>('generate');
     const [questions, saveQuestions] = useQuestionStorage();
     const [modalState, setModalState] = useState<{ isOpen: boolean, newQuestions: Question[] }>({ isOpen: false, newQuestions: [] });
+    const [visitCount, setVisitCount] = useState(0);
+
+    useEffect(() => {
+        try {
+            const count = parseInt(localStorage.getItem('lekolokoVisitCount') || '0', 10);
+            const newCount = count + 1;
+            localStorage.setItem('lekolokoVisitCount', String(newCount));
+            setVisitCount(newCount);
+        } catch (error) {
+            console.error("Failed to update visit count:", error);
+            setVisitCount(1); // Fallback
+        }
+    }, []);
 
     const handleSaveNewQuestions = (newQuestions: Question[]) => {
         if (questions.length + newQuestions.length > MAX_QUESTIONS) {
@@ -683,7 +704,7 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-background text-primary-text">
-            <Header activeTab={activeTab} setActiveTab={setActiveTab} />
+            <Header activeTab={activeTab} setActiveTab={setActiveTab} visitCount={visitCount} />
             <main className="container mx-auto px-4 py-8">
                 {renderActiveView()}
             </main>

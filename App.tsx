@@ -228,7 +228,6 @@ const QuestionBankView: React.FC<{
     onMarkAsPracticed: (questionId: string) => void,
 }> = ({ questions, onUpdateNote, onToggleMark, onMarkAsPracticed }) => {
     const [deckPosition, setDeckPosition] = useState(0);
-    const [isPracticingNew, setIsPracticingNew] = useState(true);
     const [focusNewOnly, setFocusNewOnly] = useState(false);
     
     // States for the current question card
@@ -259,19 +258,17 @@ const QuestionBankView: React.FC<{
             prevQuestionCount.current = questions.length;
             setDeckPosition(0);
             resetCardState();
-            setIsPracticingNew(questions.some(q => !q.hasBeenPracticed));
         }
     }, [questions]);
 
     // DERIVE decks on every render from the single source of truth (`questions` prop).
-    // This eliminates stale state bugs.
     const questionMap = new Map(questions.map(q => [q.id, q]));
-    const sortedQuestions = shuffledAllIds.current
+    const allShuffledQuestions = shuffledAllIds.current
         .map(id => questionMap.get(id))
         .filter((q): q is Question => !!q);
     
-    const newDeck = sortedQuestions.filter(q => !q.hasBeenPracticed);
-    const practicedDeck = sortedQuestions.filter(q => q.hasBeenPracticed);
+    const newDeck = allShuffledQuestions.filter(q => !q.hasBeenPracticed);
+    const normalModeDeck = allShuffledQuestions;
 
     useEffect(() => {
         let interval: number | null = null;
@@ -291,49 +288,34 @@ const QuestionBankView: React.FC<{
         return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
     };
 
-    const activeDeck = focusNewOnly ? newDeck : (isPracticingNew ? newDeck : practicedDeck);
+    const activeDeck = focusNewOnly ? newDeck : normalModeDeck;
     const currentQuestion = activeDeck[deckPosition];
 
     const handleNext = () => {
         if (!currentQuestion) return;
-    
-        const wasPracticingNew = isPracticingNew;
+
+        // Always mark as practiced if it was a new question. This is essential for New Only mode.
+        if (!currentQuestion.hasBeenPracticed) {
+            onMarkAsPracticed(currentQuestion.id);
+        }
+
         resetCardState();
     
-        if (wasPracticingNew) {
-            const isLastNewQuestion = deckPosition >= newDeck.length - 1;
-            
-            // This is the action that triggers re-render and deck changes.
-            onMarkAsPracticed(currentQuestion.id);
-    
-            if (isLastNewQuestion && !focusNewOnly) {
-                // After this last new question is done, switch to practiced deck.
-                setIsPracticingNew(false);
-                setDeckPosition(0);
-            }
-            // If it's not the last question, or we're in focus mode, we don't change position. 
-            // The deck will shrink on re-render, effectively advancing to the next question.
+        if (focusNewOnly) {
+            // In "New Only" mode, the deck shrinks. Position stays the same to show the next item.
+            // When the last new question is answered, the component will show the completion message.
         } else {
-            // We are on the practiced deck, so just increment position.
-            if (deckPosition < practicedDeck.length - 1) {
+            // In "Normal Mode", we have a fixed-size deck, so we just increment position.
+            if (deckPosition < activeDeck.length - 1) {
                 setDeckPosition(deckPosition + 1);
             }
         }
     };
     
     const handleToggleFocusMode = () => {
-        const newFocusState = !focusNewOnly;
-        setFocusNewOnly(newFocusState);
+        setFocusNewOnly(!focusNewOnly);
         setDeckPosition(0);
         resetCardState();
-
-        if (newFocusState) {
-            // "New Only" mode is always for new questions
-            setIsPracticingNew(true);
-        } else {
-            // When turning off, start with new questions if they exist
-            setIsPracticingNew(newDeck.length > 0);
-        }
     };
 
     const handleReshuffle = () => {
@@ -341,7 +323,6 @@ const QuestionBankView: React.FC<{
         shuffledAllIds.current = shuffleArray(questions.map(q => q.id));
         setDeckPosition(0);
         resetCardState();
-        setIsPracticingNew(newDeck.length > 0);
     };
 
     useEffect(() => {
@@ -375,19 +356,13 @@ const QuestionBankView: React.FC<{
             const count = newDeck.length;
             return `${count} new question${count !== 1 ? 's' : ''} left`;
         }
-        if (isPracticingNew) {
-            if (newDeck.length === 0) return "No new questions";
-            return `New Question ${Math.min(deckPosition + 1, newDeck.length)} of ${newDeck.length}`;
-        }
-        if (practicedDeck.length === 0) return "No practiced questions";
-        return `Review Question ${Math.min(deckPosition + 1, practicedDeck.length)} of ${practicedDeck.length}`;
+        // Normal Mode
+        if (normalModeDeck.length === 0) return "No questions in bank";
+        return `Review Question ${Math.min(deckPosition + 1, normalModeDeck.length)} of ${normalModeDeck.length}`;
     };
     
     const hasAnswered = selectedAnswer !== null;
-    const isAtEndOfNewDeck = isPracticingNew && deckPosition >= newDeck.length - 1;
-    const isAtEndOfPracticedDeck = !isPracticingNew && deckPosition >= practicedDeck.length - 1;
-
-    const disableNextButton = isAtEndOfPracticedDeck || (isAtEndOfNewDeck && (focusNewOnly || practicedDeck.length === 0));
+    const isAtEndOfDeck = deckPosition >= activeDeck.length - 1;
 
     const handleOptionClick = (optionText: string) => {
         if (hasAnswered) return;
@@ -526,7 +501,7 @@ const QuestionBankView: React.FC<{
             )}
             <button 
                 onClick={handleNext} 
-                disabled={!hasAnswered || disableNextButton}
+                disabled={!hasAnswered || isAtEndOfDeck}
                 className="w-full sm:w-auto mx-auto mt-4 px-8 py-3 bg-brand-primary text-white font-semibold rounded-lg shadow-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-background disabled:bg-slate-600 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
             >
                 Next Question

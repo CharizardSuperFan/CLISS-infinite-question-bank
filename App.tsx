@@ -135,7 +135,7 @@ const parseGeneratedText = (text: string): { newQuestions: Question[], error: st
 
 // --- UI Components ---
 
-const Header: React.FC<{ activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void; visitCount: number }> = ({ activeTab, setActiveTab, visitCount }) => {
+const Header: React.FC<{ activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void; visitCount: string }> = ({ activeTab, setActiveTab, visitCount }) => {
     return (
         <header className="relative py-6 text-center border-b border-surface">
              <div className="absolute top-6 left-6 text-secondary-text font-mono text-sm hidden sm:block">
@@ -629,18 +629,25 @@ const App: React.FC = () => {
     const [activeTab, setActiveTab] = useState<ActiveTab>('generate');
     const [questions, saveQuestions] = useQuestionStorage();
     const [modalState, setModalState] = useState<{ isOpen: boolean, newQuestions: Question[] }>({ isOpen: false, newQuestions: [] });
-    const [visitCount, setVisitCount] = useState(0);
+    const [visitCount, setVisitCount] = useState<string>('...');
 
     useEffect(() => {
-        try {
-            const count = parseInt(localStorage.getItem('lekolokoVisitCount') || '0', 10);
-            const newCount = count + 1;
-            localStorage.setItem('lekolokoVisitCount', String(newCount));
-            setVisitCount(newCount);
-        } catch (error) {
-            console.error("Failed to update visit count:", error);
-            setVisitCount(1); // Fallback
-        }
+        const fetchVisitCount = async () => {
+            try {
+                // FIX: Corrected the API endpoint to fetch JSON data instead of an SVG, resolving the parsing error.
+                const response = await fetch('https://api.visitorbadge.io/api/combined?path=lekoloko.cliss-infinite-question-bank');
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                const data = await response.json();
+                setVisitCount(String(data.value));
+            } catch (error) {
+                console.error("Failed to fetch visitor count:", error);
+                setVisitCount('N/A'); // Display N/A on error
+            }
+        };
+
+        fetchVisitCount();
     }, []);
 
     const handleSaveNewQuestions = (newQuestions: Question[]) => {

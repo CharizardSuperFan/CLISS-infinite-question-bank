@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Question, Option } from './types';
 import { GenerateIcon, BankIcon, HistoryIcon, CheckIcon, XIcon, AlertIcon, StarIcon, StarOutlineIcon, EyeSlashIcon } from './components/IconComponents';
@@ -139,7 +140,7 @@ const Header: React.FC<{ activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) =>
     return (
         <header className="relative py-6 text-center border-b border-surface">
              <div className="absolute top-6 left-6 text-secondary-text font-mono text-sm hidden sm:block">
-                Total Visits: <span id="counter.dev-visits"></span>
+                Total Visits: <span id="counter"></span>
             </div>
             <h1 className="text-4xl font-bold tracking-tight text-primary-text">
                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-teal-400">CLISS</span> Infinite Question Bank

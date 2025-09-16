@@ -135,11 +135,11 @@ const parseGeneratedText = (text: string): { newQuestions: Question[], error: st
 
 // --- UI Components ---
 
-const Header: React.FC<{ activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void; visitCount: number }> = ({ activeTab, setActiveTab, visitCount }) => {
+const Header: React.FC<{ activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void; }> = ({ activeTab, setActiveTab }) => {
     return (
         <header className="relative py-6 text-center border-b border-surface">
              <div className="absolute top-6 left-6 text-secondary-text font-mono text-sm hidden sm:block">
-                Total Visits: {visitCount}
+                Total Visits: <span id="counter.dev-visits"></span>
             </div>
             <h1 className="text-4xl font-bold tracking-tight text-primary-text">
                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-teal-400">CLISS</span> Infinite Question Bank
@@ -629,19 +629,6 @@ const App: React.FC = () => {
     const [activeTab, setActiveTab] = useState<ActiveTab>('generate');
     const [questions, saveQuestions] = useQuestionStorage();
     const [modalState, setModalState] = useState<{ isOpen: boolean, newQuestions: Question[] }>({ isOpen: false, newQuestions: [] });
-    const [visitCount, setVisitCount] = useState(0);
-
-    useEffect(() => {
-        try {
-            const count = parseInt(localStorage.getItem('lekolokoVisitCount') || '0', 10);
-            const newCount = count + 1;
-            localStorage.setItem('lekolokoVisitCount', String(newCount));
-            setVisitCount(newCount);
-        } catch (error) {
-            console.error("Failed to update visit count:", error);
-            setVisitCount(1); // Fallback
-        }
-    }, []);
 
     const handleSaveNewQuestions = (newQuestions: Question[]) => {
         if (questions.length + newQuestions.length > MAX_QUESTIONS) {
@@ -704,7 +691,7 @@ const App: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-background text-primary-text">
-            <Header activeTab={activeTab} setActiveTab={setActiveTab} visitCount={visitCount} />
+            <Header activeTab={activeTab} setActiveTab={setActiveTab} />
             <main className="container mx-auto px-4 py-8">
                 {renderActiveView()}
             </main>
